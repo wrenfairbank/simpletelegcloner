@@ -17,7 +17,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf8')
 # config
 
 path_to_gclone = ''  # Optional
-path_to_gclone_config = ''  # Optional
+path_to_gclone_config = ''  # Optional. Point it to the gclone .conf file.
+gclone_remote_name = 'gc' #  Default value is gc. Change it to what you have got in your gclone config.
 
 # telegram bot token refer to https://core.telegram.org/bots#3-how-do-i-create-a-bot
 # e.g. '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11'
@@ -33,33 +34,47 @@ destination_folder_name = "My Drive"  # Name of gdrive folder, e.g. "My Drive"
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.DEBUG)
 console_logger = logging.StreamHandler()
-console_logger.setLevel(logging.DEBUG)
+console_logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 console_logger.setFormatter(formatter)
 root_logger.addHandler(console_logger)
 
 this_file_name = os.path.basename(os.path.splitext(os.path.basename(__file__))[0])
 file_logger = logging.FileHandler(this_file_name + '.log', 'a', 'utf-8')
-file_logger.setLevel(logging.INFO)
+file_logger.setLevel(logging.DEBUG)
 file_logger.setFormatter(formatter)
 root_logger.addHandler(file_logger)
 
-if path_to_gclone and not os.path.isfile(path_to_gclone):
-    path_to_gclone = shutil.which(path_to_gclone)
-    if not os.path.isfile(path_to_gclone):
+if not os.path.isfile(path_to_gclone):
+    path_to_gclone = shutil.which('gclone')
+    if not path_to_gclone:
         logging.warning('gclone executable is not found.')
         input("Press Enter to continue...")
         sys.exit(0)
-logging.debug('Found gclone: ' + path_to_gclone)
+logging.info('Found gclone: ' + path_to_gclone)
+
+if not gclone_remote_name:
+    logging.warning('gclone remote name is not found.')
+    input("Press Enter to continue...")
+    sys.exit(0)
 
 if not os.path.isfile(path_to_gclone_config):
     path_to_gclone_config = None
     logging.debug('Cannot find gclone config. Use system gclone config instead.')
 else:
-    logging.debug('Found gclone config: ' + path_to_gclone_config)
+    logging.info('Found gclone config: ' + path_to_gclone_config)
 
-FNULL = open(os.devnull, 'w')
+if not destination_folder:
+    logging.warning('Destination folder id is not provided.')
+    input("Press Enter to continue...")
+    sys.exit(0)
+logging.info('Found destination_folder: ' + destination_folder)
 
+if not token:
+    logging.warning('telegram token is not provided.')
+    input("Press Enter to continue...")
+    sys.exit(0)
+logging.info('Found token: ' + token)
 
 class FolderIDList:
     def __init__(self, name, _id):
@@ -96,7 +111,7 @@ def process_message(update, context):
         length = entity.length
         if entity.type == 'text_link':
             url = entity.url
-            name = text[offset:offset + length].strip('/')
+            name = text[offset:offset + length].strip('/').strip()
         elif entity.type == 'url':
             url = text[offset:offset + length]
             name = 'file{:03d}'.format(k)
@@ -114,7 +129,11 @@ def process_message(update, context):
     if len(folder_ids) == 0:
         logging.debug('Cannot find any legit folder id.')
         return
-    title = text.split('\n', 1)[0]
+    if '\n' in text:
+        title = text.split('\n', 1)[0].strip('/').strip()
+    else:
+        title = time.strftime("%Y%m%d")
+    logging.info('Saving {0} to folder [{1}]'.format(title, destination_folder_name))
     t = threading.Thread(target=fire_save_files, args=(context, folder_ids, title))
     t.start()
 
@@ -160,14 +179,17 @@ def fire_save_files(context, folder_ids, title):
         if path_to_gclone_config:
             command_line += ['--config',path_to_gclone_config]
         command_line += [
-            "--log-file={0}-{1}.log".format(this_file_name, time.strftime("%Y%m%d")),
-            "gc:{"+folder_id.id+"}",
-            ("gc:{"+destination_folder+"}/" + destination_path).encode('utf-8')
+            "--log-file={0}-{1}.log".format('gclone', time.strftime("%Y%m%d")),
+            'gc:{'+folder_id.id+'}',
+            ('gc:{'+destination_folder+'}/' + destination_path)
         ]
         
         logging.debug('command line: ' + str(command_line))
-        subprocess.call(command_line,  stdout=FNULL, stderr=subprocess.STDOUT, encoding="utf-8", shell=True)
-        
+
+        p = subprocess.call(command_line, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, encoding="utf-8", shell=False)
+        if p != 0:
+            logging.warning('gclone returns error. see log for details.')
+
     context.bot.send_message(chat_id=message_from_user_white_list[0], text=message)
     logging.info(message)
 
