@@ -141,7 +141,7 @@ def process_message(update, context):
 def parse_folder_id_from_url(url):
     folder_id = None
     
-    pattern = r'https://drive\.google\.com/drive/folders/([\w.\-_]+)(?:\?[\=\w]+)?' \
+    pattern = r'https://drive\.google\.com/drive/(?:u/[\d]+/)?folders/([\w.\-_]+)(?:\?[\=\w]+)?' \
               r'|https\:\/\/drive\.google\.com\/folderview\?id=([\w.\-_]+)(?:\&[=\w]+)?' \
               r'|https\:\/\/drive\.google\.com\/open\?id=([\w.\-_]+)(?:\&[=\w]+)?' \
               r'|https\:\/\/drive\.google\.com\/(?:a\/[\w.\-_]+\/)?file\/d\/([\w\.\-_]+)\/view' \
@@ -189,6 +189,7 @@ def fire_save_files(context, folder_ids, title):
         p = subprocess.call(command_line, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, encoding="utf-8", shell=False)
         if p != 0:
             logging.warning('gclone returns error. see log for details.')
+            message += ' [x]'
 
     context.bot.send_message(chat_id=message_from_user_white_list[0], text=message)
     logging.info(message)
