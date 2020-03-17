@@ -145,7 +145,7 @@ def parse_folder_id_from_url(url):
               r'|https\:\/\/drive\.google\.com\/folderview\?id=([\w.\-_]+)(?:\&[=\w]+)?' \
               r'|https\:\/\/drive\.google\.com\/open\?id=([\w.\-_]+)(?:\&[=\w]+)?' \
               r'|https\:\/\/drive\.google\.com\/(?:a\/[\w.\-_]+\/)?file\/d\/([\w\.\-_]+)\/' \
-              r'|https\:\/\/drive\.google\.com\/(?:a\/[\w.\-_]+\/)?uc\?id\=([\w.\-_]+)&? '
+              r'|https\:\/\/drive\.google\.com\/(?:a\/[\w.\-_]+\/)?uc\?id\=([\w.\-_]+)&?'
     
     x = re.search(pattern, url)
     if x:
