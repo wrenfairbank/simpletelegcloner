@@ -160,7 +160,7 @@ def parse_folder_id_from_url(url):
 
 def fire_save_files(context, folder_ids, title):
     is_multiple_ids = len(folder_ids) > 1
-    message = 'Saving [{0}] to [{1}/{2}].\n\n'.format(title, destination_folder_name)
+    message = 'Saving [{0}] to [{1}].\n\n'.format(title, destination_folder_name)
     logger.debug(message)
     rsp = context.bot.send_message(chat_id=message_from_user_white_list[0], text=message, parse_mode=ParseMode.HTML)
     message_id = rsp.message_id
