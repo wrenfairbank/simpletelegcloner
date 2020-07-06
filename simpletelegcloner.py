@@ -17,6 +17,7 @@ from telegram.ext import Updater
 
 path_to_gclone = ''  # Optional
 path_to_gclone_config = ''  # Optional. Point it to the gclone .conf file.
+gclone_para_override = ''  # Optional
 gclone_remote_name = 'gc'  # Default value is gc. Change it to what you have got in your gclone config.
 
 # telegram bot token refer to https://core.telegram.org/bots#3-how-do-i-create-a-bot
@@ -88,6 +89,11 @@ if not token:
     sys.exit(0)
 logger.info('Found token: ' + token)
 
+is_fclone = 'fclone' in os.path.basename(path_to_gclone)
+
+if gclone_para_override:
+    gclone_para_override = gclone_para_override.split()
+
 
 def get_id(update, context):
     if len(message_from_user_white_list) and (update.message.chat.id not in message_from_user_white_list):
@@ -144,11 +150,13 @@ def process_message(update, context):
 def parse_folder_id_from_url(url):
     folder_id = None
 
-    pattern = r'https://drive\.google\.com/drive/(?:u/[\d]+/)?folders/([\w.\-_]+)(?:\?[\=\w]+)?' \
-              r'|https\:\/\/drive\.google\.com\/folderview\?id=([\w.\-_]+)(?:\&[=\w]+)?' \
-              r'|https\:\/\/drive\.google\.com\/open\?id=([\w.\-_]+)(?:\&[=\w]+)?' \
-              r'|https\:\/\/drive\.google\.com\/(?:a\/[\w.\-_]+\/)?file\/d\/([\w\.\-_]+)\/' \
-              r'|https\:\/\/drive\.google\.com\/(?:a\/[\w.\-_]+\/)?uc\?id\=([\w.\-_]+)&?'
+    pattern = r'https://drive\.google\.com/(?:' \
+              r'drive/(?:u/[\d]+/)?(?:mobile/)?folders/([\w.\-_]+)(?:\?[\=\w]+)?|' \
+              r'folderview\?id=([\w.\-_]+)(?:\&[=\w]+)?|' \
+              r'open\?id=([\w.\-_]+)(?:\&[=\w]+)?|' \
+              r'(?:a/[\w.\-_]+/)?file/d/([\w.\-_]+)|' \
+              r'(?:a/[\w.\-_]+/)?uc\?id\=([\w.\-_]+)&?' \
+              r')'
 
     x = re.search(pattern, url)
     if x:
@@ -177,25 +185,40 @@ def fire_save_files(context, folder_ids, title):
             '-P',
             '--stats',
             '1s',
-            '--transfers',
-            '6',
-            '--tpslimit',
-            '6',
-            '--ignore-existing',
-            '--include',
-            '*.{mp4,mkv,flac,iso,nfo,srt,ass,sup,ssa,avi,ts,dsf,m2ts}'
+            '--ignore-existing'
         ]
+        if gclone_para_override:
+            command_line.extend(gclone_para_override)
+        elif is_fclone is True:
+            command_line += [
+                '--checkers=256',
+                '--transfers=256',
+                '--drive-pacer-min-sleep=1ms',
+                '--drive-pacer-burst=5000',
+                '--check-first'
+            ]
+        else:
+            command_line += [
+                '--transfers',
+                '8',
+                '--tpslimit',
+                '6',
+            ]
         if path_to_gclone_config:
             command_line += ['--config', path_to_gclone_config]
         command_line += [
             # "--log-file={0}-{1}.log".format('gclone', time.strftime("%Y%m%d")),
-            'gc:{' + folder_id + '}',
-            ('gc:{' + destination_folder + '}/' + destination_path)
+            '{}:{{{}}}'.format(gclone_remote_name, folder_id),
+            ('{}:{{{}}}/{}'.format(gclone_remote_name, destination_folder, destination_path))
         ]
 
         logger.debug('command line: ' + str(command_line))
 
-        process = subprocess.Popen(command_line, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding='utf-8',
+        process = subprocess.Popen(command_line,
+                                   bufsize=1,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   encoding='utf-8',
+                                   errors='ignore',
                                    universal_newlines=True)
         progress_checked_files = 0
         progress_total_check_files = 0
@@ -206,13 +229,15 @@ def fire_save_files(context, folder_ids, title):
         progress_transferred_size = '0'
         progress_total_size = '0 Bytes'
         progress_speed = '-'
+        progress_speed_file = '-'
         progress_eta = '-'
         progress_size_percentage_10 = 0
         regex_checked_files = r'Checks:\s+(\d+)\s+/\s+(\d+)'
-        regex_total_files = r'Transferred:\s+(\d+) / (\d+), (\d+)%'
+        regex_total_files = r'Transferred:\s+(\d+) / (\d+), (\d+)%,\s*([\d.]+\sFiles/s)?'
         regex_total_size = r'Transferred:[\s]+([\d.]+\s*[kMGTP]?) / ([\d.]+[\s]?[kMGTP]?Bytes),' \
                            r'\s*(?:\-|(\d+)\%),\s*([\d.]+\s*[kMGTP]?Bytes/s),\s*ETA\s*([\-0-9hmsdwy]+)'
         message_progress_last = ''
+        message_progress = ''
         progress_update_time = datetime.datetime.now() - datetime.timedelta(minutes=5)
         while True:
             try:
@@ -244,8 +269,8 @@ def fire_save_files(context, folder_ids, title):
                 message_progress = '<a href="https://drive.google.com/open?id={}">{}</a>\n' \
                                    '检查文件：<code>{} / {}</code>\n' \
                                    '文件数量：<code>{} / {}</code>\n' \
-                                   '任务容量：<code>{} / {}</code>\n' \
-                                   '传输速度：<code>{} ETA {}</code>\n' \
+                                   '任务容量：<code>{} / {}</code>\n{}' \
+                                   '复制速度：<code>{} ETA {}</code>\n' \
                                    '任务进度：<code>[{}] {: >4}%</code>'.format(
                     folder_id,
                     destination_path,
@@ -255,12 +280,14 @@ def fire_save_files(context, folder_ids, title):
                     progress_total_files,
                     progress_transferred_size,
                     progress_total_size,
+                    f'任务速度：<code>{progress_speed_file}</code>\n' if is_fclone is True else '',
                     progress_speed,
                     progress_eta,
                     '█' * progress_file_percentage_10 + '░' * (
                             progress_max_percentage_10 - progress_file_percentage_10) + ' ' * (
                             10 - progress_max_percentage_10),
                     progress_file_percentage)
+
                 if message_progress != message_progress_last:
                     if datetime.datetime.now() - progress_update_time > datetime.timedelta(seconds=5):
                         temp_message = '{}\n\n{}'.format(message, message_progress)
